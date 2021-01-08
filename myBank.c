@@ -44,6 +44,7 @@ int validate_account_number(int iAccountNum) {
     return (iAccountNum >= MIN_ACCOUNT_NUMBER && iAccountNum < MAX_ACCOUNT_NUMBER) ? STATUS_RUNTIME_OK
                                                                                    : STATUS_RUNTIME_ERR_BAD_RANGE;
 }
+
 /// Calculates the memory address for an account and account option.
 /// \param dpAccounts Pointer to accounts array.
 /// \param iAccountIdx Account index.
@@ -51,7 +52,7 @@ int validate_account_number(int iAccountNum) {
 /// \return Address of memory.
 double *get_account_option_addr(const double *dpAccounts, int iAccountIdx, int iOption) {
     // No boundary checks here, just calculation.
-    return (double *) (dpAccounts + iAccountIdx * 2 + iOption);
+    return (double *) (dpAccounts + iAccountIdx * SI_ACCOUNT_OPTIONS_LEN + iOption);
 }
 
 int validate_account_number_open(const double *dpAccounts, int iAccountNum) {
@@ -71,11 +72,9 @@ int validate_account_number_open(const double *dpAccounts, int iAccountNum) {
 /// \param bVerbose Should print.
 /// \return Entered double.
 double get_user_input_double(int *ipStatus, bool bVerbose) {
-    char in[DEFAULT_BUFFER_INPUT_CHAR];
-    fgets(in, sizeof(in), stdin);
-    char *pInEnd;
-    double amount = strtod(in, &pInEnd);
-    *ipStatus = (pInEnd == in || errno == ERANGE) ? STATUS_RUNTIME_ERR_FAILED_TO_READ_DOUBLE : STATUS_RUNTIME_OK;
+    double amount = 0;
+    int iScanResult = scanf("%lf", &amount);
+    *ipStatus = (iScanResult == EOF || iScanResult <= 0) ? STATUS_RUNTIME_ERR_FAILED_TO_READ_DOUBLE : STATUS_RUNTIME_OK;
 
     if (bVerbose) {
         if (*ipStatus != STATUS_RUNTIME_OK) {
@@ -131,7 +130,6 @@ int get_user_account_number(int *ipStatus, bool bVerbose) {
                 break;
         }
     }
-
     return number;
 }
 
@@ -176,15 +174,18 @@ int get_next_closed_account_idx(double *dpAccounts, int iAccountsLen) {
 /// \param iAccountIdx Account index.
 /// \param ipStatus Status pointer.
 /// \param bPrintNewBalance Should print new balance.
+/// \param bOverrideAmount Should override the balance.
 /// \return Deposited amount.
-double account_deposit(double *dpAccounts, int iAccountIdx, int *ipStatus, bool bPrintNewBalance) {
+double
+account_deposit(double *dpAccounts, int iAccountIdx, int *ipStatus, bool bOverrideAmount, bool bPrintNewBalance) {
     printf("Please enter amount for deposit: ");
+
     double amount = get_user_input_positive_amount(ipStatus, false);
     double *dpAccountBalance = get_account_option_addr(dpAccounts, iAccountIdx, OPT_ACC_BALANCE);
 
     switch (*ipStatus) {
         case STATUS_RUNTIME_OK:
-            *dpAccountBalance += amount;
+            *dpAccountBalance = bOverrideAmount ? amount : *dpAccountBalance + amount;
             if (bPrintNewBalance) {
                 printf("The new balance is: %.2f", *dpAccountBalance);
             }
@@ -206,11 +207,11 @@ double account_deposit(double *dpAccounts, int iAccountIdx, int *ipStatus, bool 
 /// \return Amount withdrawn.
 double account_withdrawal(double *dpAccounts, int iAccountIdx, int *ipStatus) {
     printf("Please enter the amount to withdraw: ");
-    double amount = get_user_input_positive_amount(ipStatus, false);
+    double amount = get_user_input_double(ipStatus, false);
     double *dpAccountBalance = get_account_option_addr(dpAccounts, iAccountIdx, OPT_ACC_BALANCE);
 
     if (*ipStatus == STATUS_RUNTIME_OK) {
-        if (amount > *dpAccountBalance) {
+        if (amount > 0 && amount > *dpAccountBalance) {
             *ipStatus = STATUS_RUNTIME_ERR_NO_FUNDS;
         }
     }
@@ -222,9 +223,6 @@ double account_withdrawal(double *dpAccounts, int iAccountIdx, int *ipStatus) {
             break;
         case STATUS_RUNTIME_ERR_FAILED_TO_READ_DOUBLE:
             printf("Failed to read the amount");
-            break;
-        case STATUS_RUNTIME_ERR_NEGATIVE_INPUT:
-            printf("Cannot withdraw a negative amount");
             break;
         case STATUS_RUNTIME_ERR_NO_FUNDS:
             printf("Cannot withdraw more than the balance");
@@ -277,10 +275,15 @@ void account_close(double *dpAccounts, int iAccountNum) {
 /// \param dpAccounts Accounts pointer.
 /// \param iAccountsLen Accounts len.
 void accounts_print(double *dpAccounts, int iAccountsLen) {
+    bool bPrintNewline = false;
+
     for (int i = 0; i < iAccountsLen; ++i) {
         double *dpAccountsStatus = get_account_option_addr(dpAccounts, i, OPT_ACC_STATUS);
+
         if (*dpAccountsStatus == STATUS_ACC_OPEN) {
+            if (bPrintNewline) { printf("\n"); }
             account_balance(dpAccounts, convert_idx_to_account_number(i));
+            bPrintNewline = true;
         }
     }
 }
@@ -297,13 +300,12 @@ int menu_entry_account_open(double *dpAccounts, int iAccountsLen) {
         return STATUS_RUNTIME_ERR_NO_FREE_ACCOUNT;
     }
 
-    account_deposit(dpAccounts, iFreeAccountIdx, &iOk, false);
-
-    double *ipAccountStatus = get_account_option_addr(dpAccounts, iFreeAccountIdx, OPT_ACC_STATUS);
-    *ipAccountStatus = STATUS_ACC_OPEN;
+    account_deposit(dpAccounts, iFreeAccountIdx, &iOk, true, false);
 
     if (iOk == STATUS_RUNTIME_OK) {
-        printf("New account number is: %d", convert_idx_to_account_number(iFreeAccountIdx));
+        double *ipAccountStatus = get_account_option_addr(dpAccounts, iFreeAccountIdx, OPT_ACC_STATUS);
+        *ipAccountStatus = STATUS_ACC_OPEN;
+        printf("New account number is: %d ", convert_idx_to_account_number(iFreeAccountIdx));
     }
     return iFreeAccountIdx;
 }
@@ -314,7 +316,7 @@ void menu_entry_account_deposit(double *dpAccounts) {
     int iOk = STATUS_RUNTIME_OK;
     int iAccountNum = get_user_account_number_open(dpAccounts, &iOk, true);
     if (iOk == STATUS_RUNTIME_OK) {
-        account_deposit(dpAccounts, convert_account_number_to_idx(iAccountNum), &iOk, true);
+        account_deposit(dpAccounts, convert_account_number_to_idx(iAccountNum), &iOk, false, true);
     }
 }
 
@@ -398,33 +400,43 @@ void menu_entry_accounts_close_all(double *dpAccounts, int iAccountsLen) {
 /// \param dpAccounts
 /// \param iAccountsLen
 void loop(double *dpAccounts, int iAccountsLen) {
-    char in[DEFAULT_BUFFER_INPUT_CHAR];
+    char in[DEFAULT_BUFFER_INPUT_CHAR] = {'\0'};
 
     while (1) {
         printf("\n");
         print_usage();
-        fgets(in, sizeof(in), stdin);
+        in[0] = '\0';
 
-        if (!strcasecmp(in, "E\n")) {
+        // TODO format formatter string based on actual size of buffer.
+        int iScanResult = scanf("%1s", in);
+
+        if (!strcmp(in, "E")) {
             menu_entry_accounts_close_all(dpAccounts, iAccountsLen);
             return;
-        } else if (!strcasecmp(in, "O\n")) {
+        } else if (!strcmp(in, "O")) {
             menu_entry_account_open(dpAccounts, iAccountsLen);
-        } else if (!strcasecmp(in, "B\n")) {
+        } else if (!strcmp(in, "B")) {
             menu_entry_account_balance(dpAccounts);
-        } else if (!strcasecmp(in, "D\n")) {
+        } else if (!strcmp(in, "D")) {
             menu_entry_account_deposit(dpAccounts);
-        } else if (!strcasecmp(in, "W\n")) {
+        } else if (!strcmp(in, "W")) {
             menu_entry_account_withdrawal(dpAccounts);
-        } else if (!strcasecmp(in, "I\n")) {
+        } else if (!strcmp(in, "I")) {
             menu_entry_accounts_interest(dpAccounts, iAccountsLen);
-        } else if (!strcasecmp(in, "C\n")) {
+        } else if (!strcmp(in, "C")) {
             menu_entry_account_close(dpAccounts);
-        } else if (!strcasecmp(in, "P\n")) {
+        } else if (!strcmp(in, "P")) {
             menu_entry_accounts_print(dpAccounts, iAccountsLen);
         } else {
-            printf("Invalid transaction type");
+            // Exit if no more possible input.
+            if (iScanResult == EOF) {
+                menu_entry_accounts_close_all(dpAccounts, iAccountsLen);
+                return;
+            } else {
+                printf("Invalid transaction type");
+            }
         }
+
         printf("\n");
     }
 }

@@ -58,7 +58,7 @@ int get_user_account_number_open(double *dpAccounts, int *ipStatus, bool bVerbos
 
 int get_next_closed_account_idx(double *dpAccounts, int iAccountsLen);
 
-double account_deposit(double *dpAccounts, int iAccountIdx, int *ipStatus, bool bPrintNewBalance);
+double account_deposit(double *dpAccounts, int iAccountIdx, int *ipStatus, bool bOverrideAmount, bool bPrintNewBalance);
 
 double account_withdrawal(double *dpAccounts, int iAccountIdx, int *ipStatus);
 

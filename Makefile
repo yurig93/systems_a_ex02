@@ -28,22 +28,14 @@ $(ODIR)/%.so: $(OBJ_LIB_BANK)
 $(ODIR)/%.a: $(OBJ_LIB_BANK)
 	ar rcs $@ $^
 
-
-# Dynamic libmyBank target
-$(TARGET_LOWER_BANK_LIB)d: $(TARGET_BANK_LIB).so
-
 # Static libmyBank target
 $(TARGET_LOWER_BANK_LIB)s: $(TARGET_BANK_LIB).a
-
-# Dynamic maind target
-$(TARGET_MAIN)d: $(TARGET_MAIN).o $(TARGET_BANK_LIB).so
-	$(CC) -o $@ $^ $(CFLAGS)
 
 # Static mains target
 $(TARGET_MAIN)s: $(TARGET_MAIN).o $(TARGET_BANK_LIB).a
 	$(CC) -o $@ $^ $(CFLAGS)
 
-all: $(TARGET_MAIN)s $(TARGET_MAIN)d $(TARGET_LOWER_BANK_LIB)s $(TARGET_LOWER_BANK_LIB)d
+all: $(TARGET_MAIN)s
 
 .PHONY: clean
 
